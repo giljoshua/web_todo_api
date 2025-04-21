@@ -1,5 +1,5 @@
 <?php
-require_once 'db.php';
+require_once '../db.php'; // Corrected path
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {

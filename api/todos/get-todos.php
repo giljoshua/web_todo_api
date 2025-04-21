@@ -12,6 +12,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' || $_SERVER['REQUEST_METHOD'] === 'OPTI
             $todo = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($todo) {
+                // Cast completed to boolean before sending
+                $todo['completed'] = (bool)$todo['completed'];
                 echo json_encode($todo);
             } else {
                 http_response_code(404);
@@ -22,6 +24,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' || $_SERVER['REQUEST_METHOD'] === 'OPTI
             $stmt = $conn->prepare("SELECT * FROM todos ORDER BY id DESC");
             $stmt->execute();
             $todos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Cast completed to boolean for all todos
+            foreach ($todos as &$todo) {
+                $todo['completed'] = (bool)$todo['completed'];
+            }
+            unset($todo);
             
             echo json_encode($todos);
         }
