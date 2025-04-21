@@ -25,39 +25,61 @@
             const [description, setDescription] = React.useState('');
             const [loading, setLoading] = React.useState(true);
             const [error, setError] = React.useState(null);
-            
+
             // API base path - update this to match your server configuration
             const API_BASE = 'api';
-            
+
+            // Function to handle API errors and set state
+            const handleApiError = async (response, defaultMessage) => {
+                let errorMessage = defaultMessage;
+                try {
+                    // Try to parse JSON error response from API
+                    const errorData = await response.json();
+                    if (errorData && errorData.error) {
+                        errorMessage = errorData.error;
+                    }
+                } catch (parseError) {
+                    // Ignore if response is not JSON or empty
+                    console.error("Could not parse error response:", parseError);
+                }
+                setError(errorMessage);
+                console.error('API Error:', errorMessage);
+            };
+
             // Fetch todos on component mount
             React.useEffect(() => {
                 fetchTodos();
             }, []);
-            
+
             // Fetch all todos
             const fetchTodos = async () => {
                 try {
                     setLoading(true);
+                    setError(null); // Clear previous errors
                     const response = await fetch(`${API_BASE}/todos/get-todos.php`);
                     if (!response.ok) {
-                        throw new Error('Failed to fetch todos');
+                        await handleApiError(response, 'Failed to fetch todos');
+                        setTodos([]); // Clear todos on fetch error
+                        return; // Stop execution
                     }
                     const data = await response.json();
-                    setTodos(data);
-                    setError(null);
+                    // Ensure data is an array before setting state
+                    setTodos(Array.isArray(data) ? data : []);
                 } catch (err) {
                     console.error('Fetch error:', err);
-                    setError(err.message);
+                    setError('An unexpected error occurred while fetching todos.');
+                    setTodos([]); // Clear todos on unexpected error
                 } finally {
                     setLoading(false);
                 }
             };
-            
+
             // Add new todo
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 if (!title.trim()) return;
-                
+                setError(null); // Clear previous errors
+
                 try {
                     const response = await fetch(`${API_BASE}/todos/add-todo.php`, {
                         method: 'POST',
@@ -66,69 +88,82 @@
                         },
                         body: JSON.stringify({ title, description }),
                     });
-                    
+
                     if (!response.ok) {
-                        throw new Error('Failed to add todo');
+                        await handleApiError(response, 'Failed to add todo');
+                        return; // Stop execution
                     }
-                    
-                    const newTodo = await response.json();
+
+                    const newTodoData = await response.json();
+                    // Ensure the new todo has the completed status cast correctly if needed
+                    const newTodo = {
+                        ...newTodoData,
+                        completed: !!newTodoData.completed // Ensure boolean
+                    };
                     setTodos([newTodo, ...todos]);
                     setTitle('');
                     setDescription('');
                 } catch (err) {
                     console.error('Add error:', err);
-                    setError(err.message);
+                    setError('An unexpected error occurred while adding the todo.');
                 }
             };
-            
-            // Toggle todo completion
-            const toggleComplete = async (id, completed) => {
+
+            // Toggle todo completion - Update state AFTER successful API call
+            const toggleComplete = async (id, currentCompletedStatus) => {
+                setError(null); // Clear previous errors
+                const newCompletedStatus = !currentCompletedStatus;
+
                 try {
                     const response = await fetch(`${API_BASE}/todos/update-todo.php`, {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ id, completed: !completed }),
+                        body: JSON.stringify({ id, completed: newCompletedStatus }),
                     });
-                    
+
                     if (!response.ok) {
-                        throw new Error('Failed to update todo');
+                        await handleApiError(response, 'Failed to update todo');
+                        return; // Stop execution if update failed
                     }
-                    
-                    setTodos(todos.map(todo => 
-                        todo.id === id ? { ...todo, completed: !todo.completed } : todo
+
+                    // Update state only after successful API call
+                    setTodos(todos.map(todo =>
+                        todo.id === id ? { ...todo, completed: newCompletedStatus } : todo
                     ));
                 } catch (err) {
                     console.error('Update error:', err);
-                    setError(err.message);
+                    setError('An unexpected error occurred while updating the todo.');
                 }
             };
-            
+
             // Delete todo
             const deleteTodo = async (id) => {
+                setError(null); // Clear previous errors
                 try {
                     const response = await fetch(`${API_BASE}/todos/delete-todo.php?id=${id}`, {
                         method: 'DELETE',
                     });
-                    
+
                     if (!response.ok) {
-                        throw new Error('Failed to delete todo');
+                        await handleApiError(response, 'Failed to delete todo');
+                        return; // Stop execution
                     }
-                    
+
                     setTodos(todos.filter(todo => todo.id !== id));
                 } catch (err) {
                     console.error('Delete error:', err);
-                    setError(err.message);
+                    setError('An unexpected error occurred while deleting the todo.');
                 }
             };
-            
+
             return (
                 <div className="container mt-4">
                     <h1 className="mb-4">React Todo App</h1>
-                    
-                    {error && <div className="alert alert-danger">{error}</div>}
-                    
+
+                    {error && <div className="alert alert-danger" role="alert">{error}</div>}
+
                     <form onSubmit={handleSubmit} className="mb-4">
                         <div className="mb-3">
                             <input
@@ -137,6 +172,7 @@
                                 placeholder="What needs to be done?"
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
+                                required // Added required attribute
                             />
                         </div>
                         <div className="mb-3">
@@ -145,11 +181,12 @@
                                 placeholder="Description (optional)"
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
+                                rows="2" // Reduced rows
                             ></textarea>
                         </div>
                         <button type="submit" className="btn btn-primary">Add Todo</button>
                     </form>
-                    
+
                     {loading ? (
                         <div className="text-center">
                             <div className="spinner-border" role="status">
@@ -163,32 +200,34 @@
                                     <div>
                                         <input
                                             type="checkbox"
-                                            checked={todo.completed === "1" || todo.completed === true}
-                                            onChange={() => toggleComplete(todo.id, todo.completed)}
-                                            className="me-2"
+                                            checked={!!todo.completed} // Use boolean directly
+                                            onChange={() => toggleComplete(todo.id, !!todo.completed)}
+                                            className="form-check-input me-2" // Use form-check-input for better styling
+                                            id={`todo-${todo.id}`} // Added id for label association
                                         />
-                                        <span className={todo.completed === "1" || todo.completed === true ? "completed" : ""}>
+                                        <label htmlFor={`todo-${todo.id}`} className={!!todo.completed ? "completed" : ""}> {/* Use boolean directly, added label */}
                                             <strong>{todo.title}</strong>
-                                            {todo.description && <p className="mb-0 text-muted">{todo.description}</p>}
-                                        </span>
+                                            {todo.description && <p className="mb-0 text-muted small d-block">{todo.description}</p>} {/* Made description smaller and block */}
+                                        </label>
                                     </div>
-                                    <button 
-                                        onClick={() => deleteTodo(todo.id)} 
+                                    <button
+                                        onClick={() => deleteTodo(todo.id)}
                                         className="btn btn-danger btn-sm"
+                                        aria-label={`Delete todo: ${todo.title}`} // Added aria-label
                                     >
                                         Delete
                                     </button>
                                 </li>
                             ))}
                             {todos.length === 0 && !loading && (
-                                <li className="list-group-item text-center">No todos yet. Add one above!</li>
+                                <li className="list-group-item text-center text-muted">No todos yet. Add one above!</li>
                             )}
                         </ul>
                     )}
                 </div>
             );
         }
-        
+
         ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
